@@ -3,9 +3,8 @@ import { useState, useRef } from 'react';
 import { DebugPanel } from './components/DebugPanel';
 import { BearingScene } from './scenes/BearingScene';
 import { SettingsPanel } from './components/SettingsPanel';
-import type { AppConfig, PartConfig } from './components/SettingsPanel';
+import type { AppConfig, StationPart } from './components/SettingsPanel';
 
-// === 工具函数：Blob 转 Base64 (用于保存) ===
 const blobToBase64 = (blob: Blob): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -15,19 +14,15 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   });
 };
 
-// === 工具函数：Base64 转 Blob (用于打开) ===
 const base64ToBlob = async (base64: string): Promise<Blob> => {
   const res = await fetch(base64);
   return await res.blob();
 };
 
 function App() {
-  // 初始状态常量
+  // 初始状态：station 是空数组
   const INITIAL_CONFIG: AppConfig = {
-    station: { 
-      url: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0] },
-      material: { color: '#555555', opacity: 1.0 }
-    },
+    station: [], // 数组
     bearing: { 
       url: null, transform: { position: [0, 0, 0], rotation: [0, 0, 0] },
       material: { color: '#88ccee', opacity: 0.6 }
@@ -40,56 +35,51 @@ function App() {
 
   const [config, setConfig] = useState<AppConfig>(INITIAL_CONFIG);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  
-  // 隐藏的文件输入框引用，用于“打开”功能
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- 1. 新建 (Reset) ---
   const handleNew = () => {
     if (window.confirm('确定要新建项目吗？未保存的进度将丢失。')) {
-      // 最稳健的重置方式：刷新页面
       window.location.reload();
     }
   };
 
-  // --- 2. 保存 (Save) ---
   const handleSave = async () => {
     try {
-      // 创建一个可序列化的对象，用于存储 JSON
-      const saveObj: any = JSON.parse(JSON.stringify(config)); // 深拷贝配置数据
+      const saveObj: any = JSON.parse(JSON.stringify(config));
 
-      // 遍历所有部件，如果有 URL (说明导入了模型)，则需要把模型数据(Blob)抓取出来转成 Base64
-      for (const key of ['station', 'bearing', 'shaft'] as const) {
-        if (config[key].url) {
-          const response = await fetch(config[key].url!);
+      // 1. 保存基座数组中的所有文件
+      for (let i = 0; i < config.station.length; i++) {
+        if (config.station[i].url) {
+          const response = await fetch(config.station[i].url!);
           const blob = await response.blob();
-          const base64 = await blobToBase64(blob);
-          // 在保存的文件里，用 fileData 字段存储巨大的 Base64 字符串
-          saveObj[key].fileData = base64;
-          // url 字段在本地没用，清空避免误导
-          saveObj[key].url = null; 
+          saveObj.station[i].fileData = await blobToBase64(blob);
+          saveObj.station[i].url = null;
         }
       }
 
-      // 生成 JSON 字符串
+      // 2. 保存单体部件
+      for (const key of ['bearing', 'shaft'] as const) {
+        if (config[key].url) {
+          const response = await fetch(config[key].url!);
+          const blob = await response.blob();
+          saveObj[key].fileData = await blobToBase64(blob);
+          saveObj[key].url = null;
+        }
+      }
+
       const jsonString = JSON.stringify(saveObj, null, 2);
       const blob = new Blob([jsonString], { type: 'application/json' });
-      
-      // 触发下载
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
-      link.download = `bearing_twin_project_${new Date().toISOString().slice(0,10)}.json`;
+      link.download = `bearing_project_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.json`;
       link.click();
     } catch (e) {
-      console.error('Save failed:', e);
-      alert('保存失败，请查看控制台错误信息。');
+      console.error(e);
+      alert('保存失败');
     }
   };
 
-  // --- 3. 打开 (Open) ---
-  const handleOpenClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleOpenClick = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,60 +88,88 @@ function App() {
     try {
       const text = await file.text();
       const savedObj = JSON.parse(text);
-      
-      const newConfig = { ...INITIAL_CONFIG }; // 从初始状态开始构建
+      const newConfig = { ...INITIAL_CONFIG };
 
-      // 遍历解析
-      for (const key of ['station', 'bearing', 'shaft'] as const) {
+      // 1. 恢复基座数组
+      if (Array.isArray(savedObj.station)) {
+        newConfig.station = [];
+        for (const savedPart of savedObj.station) {
+          const part: StationPart = {
+            id: savedPart.id,
+            name: savedPart.name,
+            url: null,
+            transform: savedPart.transform,
+            material: savedPart.material
+          };
+          if (savedPart.fileData) {
+            const blob = await base64ToBlob(savedPart.fileData);
+            part.url = URL.createObjectURL(blob);
+          }
+          newConfig.station.push(part);
+        }
+      }
+
+      // 2. 恢复单体部件
+      for (const key of ['bearing', 'shaft'] as const) {
         const savedPart = savedObj[key];
-        
-        // 恢复参数 (Transform & Material)
         if (savedPart) {
           newConfig[key].transform = savedPart.transform;
           newConfig[key].material = savedPart.material;
-
-          // 恢复模型文件 (如果有 Base64 数据)
           if (savedPart.fileData) {
             const blob = await base64ToBlob(savedPart.fileData);
-            const newUrl = URL.createObjectURL(blob);
-            newConfig[key].url = newUrl;
+            newConfig[key].url = URL.createObjectURL(blob);
           }
         }
       }
 
-      // 更新状态
       setConfig(newConfig);
-      setIsSettingsOpen(true); // 打开面板让用户看到加载结果
-      
-      // 清空 input 防止重复选择同文件不触发 onChange
+      setIsSettingsOpen(true);
       e.target.value = ''; 
     } catch (e) {
-      console.error('Open failed:', e);
-      alert('打开文件失败：格式错误或文件损坏。');
+      console.error(e);
+      alert('打开文件失败');
     }
   };
 
-  // --- 原有上传逻辑 ---
-  const handleFileUpload = (part: keyof AppConfig, file: File) => {
-    if (config[part].url) URL.revokeObjectURL(config[part].url!);
-    const newUrl = URL.createObjectURL(file);
+  // 新增：删除基座零件
+  const handleDeleteStationPart = (id: string) => {
+    if (!window.confirm('确定要删除这个零件吗？')) return;
     setConfig(prev => ({
       ...prev,
-      [part]: { ...prev[part], url: newUrl }
+      station: prev.station.filter(p => p.id !== id)
     }));
+  };
+
+  // 统一文件上传处理
+  const handleFileUpload = (part: 'station' | 'bearing' | 'shaft', file: File) => {
+    const newUrl = URL.createObjectURL(file);
+
+    if (part === 'station') {
+      // 基座：添加到数组
+      const newPart: StationPart = {
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 5), // 生成唯一ID
+        name: file.name,
+        url: newUrl,
+        transform: { position: [0, 0, 0], rotation: [0, 0, 0] },
+        material: { color: '#555555', opacity: 1.0 } // 默认材质
+      };
+      setConfig(prev => ({
+        ...prev,
+        station: [...prev.station, newPart]
+      }));
+    } else {
+      // 单体：替换
+      if (config[part].url) URL.revokeObjectURL(config[part].url!);
+      setConfig(prev => ({
+        ...prev,
+        [part]: { ...prev[part], url: newUrl }
+      }));
+    }
   };
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#000' }}>
-      
-      {/* 隐藏的 input 用于打开文件 */}
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        style={{ display: 'none' }} 
-        accept=".json" 
-        onChange={handleFileChange} 
-      />
+      <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".json" onChange={handleFileChange} />
 
       <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
         <BearingScene config={config} />
@@ -166,10 +184,8 @@ function App() {
           <button 
             onClick={() => setIsSettingsOpen(true)}
             style={{
-              position: 'absolute', top: 20, right: 20,
-              pointerEvents: 'auto', padding: '10px 20px',
-              background: '#4facfe', color: 'white', border: 'none',
-              borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold',
+              position: 'absolute', top: 20, right: 20, pointerEvents: 'auto', padding: '10px 20px',
+              background: '#4facfe', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold',
               boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
             }}
           >
@@ -179,15 +195,10 @@ function App() {
 
         <div style={{ pointerEvents: 'auto' }}>
           <SettingsPanel 
-            isOpen={isSettingsOpen} 
-            onClose={() => setIsSettingsOpen(false)}
-            config={config}
-            onConfigChange={setConfig}
-            onFileUpload={handleFileUpload}
-            // 传递新功能的处理器
-            onNew={handleNew}
-            onSave={handleSave}
-            onOpen={handleOpenClick}
+            isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
+            config={config} onConfigChange={setConfig} onFileUpload={handleFileUpload}
+            onDeleteStationPart={handleDeleteStationPart}
+            onNew={handleNew} onSave={handleSave} onOpen={handleOpenClick}
           />
         </div>
       </div>

@@ -17,20 +17,19 @@ export const BearingScene: React.FC<SceneProps> = ({ config }) => {
     >
       <color attach="background" args={['#111']} />
       
-      {/* === 模型部分：现在使用动态材质参数 === */}
+      {/* === 1. 基座部分 (支持多零件) === */}
+      {config.station.map((part) => (
+        <STLModel 
+          key={part.id} // 必须有唯一 key
+          url={part.url} 
+          transform={part.transform}
+          color={part.material.color}
+          transparent={part.material.opacity < 1.0}
+          opacity={part.material.opacity}
+        />
+      ))}
       
-      {/* 1. 基座 */}
-      <STLModel 
-        url={config.station.url} 
-        transform={config.station.transform}
-        // 使用配置中的颜色
-        color={config.station.material.color}
-        // 如果透明度小于1，自动开启透明模式
-        transparent={config.station.material.opacity < 1.0}
-        opacity={config.station.material.opacity}
-      />
-      
-      {/* 2. 轴承 */}
+      {/* === 2. 轴承 === */}
       <STLModel 
         url={config.bearing.url} 
         transform={config.bearing.transform}
@@ -39,7 +38,7 @@ export const BearingScene: React.FC<SceneProps> = ({ config }) => {
         opacity={config.bearing.material.opacity}
       />
 
-      {/* 3. 主轴 */}
+      {/* === 3. 主轴 === */}
       <STLModel 
         url={config.shaft.url} 
         transform={config.shaft.transform}
