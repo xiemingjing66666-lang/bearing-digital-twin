@@ -1,22 +1,21 @@
 // src/services/types.ts
 
-// 必须要有 export
-export interface SimulationParams {
-  rpm: number;
-  load: number;
-  eccentricity: number;
-}
-
-// ⚠️ 检查这里：必须要有 export
 export interface BearingTelemetry {
   timestamp: number;
   scalars: {
-    maxPressure: number;
-    minFilmThickness: number;
+    // ✅ 新增：必须显式声明 rpm 和 load，否则 MockDataService 会报错
+    rpm: number;
+    load: number;
+    
     temperature: number;
     vibrationAmp: number;
+    maxPressure: number;
+    minFilmThickness: number;
   };
   fieldData: {
     pressureDistribution: number[];
+    // ✅ 新增：物理场数组
+    thicknessDistribution: number[];
+    temperatureDistribution: number[];
   };
 }

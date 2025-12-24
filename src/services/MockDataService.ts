@@ -1,83 +1,105 @@
 // src/services/MockDataService.ts
-import type { SimulationParams, BearingTelemetry } from './types';
+import type { BearingTelemetry } from './types'; // ✅ 必须使用 type 导入
+
+interface SimulationParams {
+  rpm: number;
+  load: number;
+}
 
 class MockDataService {
-  // 默认工况
+  private timer: number | null = null;
+  private subscribers: ((data: BearingTelemetry) => void)[] = [];
+  
   private params: SimulationParams = {
-    rpm: 3000,
-    load: 10000,
-    eccentricity: 0.5,
+    rpm: 0,
+    load: 0
   };
 
-  private intervalId: any = null;
-  private subscribers: ((data: BearingTelemetry) => void)[] = [];
+  private readonly FIELD_RESOLUTION = 360; 
+  private readonly NOMINAL_CLEARANCE = 0.05; 
 
-  // 启动模拟 (默认 100ms 刷新一次)
-  public start(intervalMs: number = 100) {
-    if (this.intervalId) return;
-    console.log("🚀 Simulation Engine Started");
-    
-    this.intervalId = setInterval(() => {
-      this.broadcast(this.calculatePhysics());
-    }, intervalMs);
+  public start() {
+    if (this.timer) return;
+    const loop = () => {
+      this.update();
+      this.timer = requestAnimationFrame(loop);
+    };
+    this.timer = requestAnimationFrame(loop);
   }
 
-  // 停止模拟
   public stop() {
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    if (this.timer) {
+      cancelAnimationFrame(this.timer);
+      this.timer = null;
     }
   }
 
-  // UI 调用此方法更新参数
   public updateParams(newParams: Partial<SimulationParams>) {
     this.params = { ...this.params, ...newParams };
   }
 
-  // UI 调用此方法订阅数据
   public subscribe(callback: (data: BearingTelemetry) => void) {
     this.subscribers.push(callback);
-    return () => { // 返回取消订阅函数
-      this.subscribers = this.subscribers.filter(sub => sub !== callback);
+    return () => {
+      this.subscribers = this.subscribers.filter(cb => cb !== callback);
     };
   }
 
-  // 私有：计算物理逻辑
-  private calculatePhysics(): BearingTelemetry {
+  private update() {
     const { rpm, load } = this.params;
-    const noise = (Math.random() - 0.5) * 0.5; // 添加噪声
+    const normRPM = rpm / 10000;
+    const normLoad = load / 50000;
 
-    // 简单物理近似公式
-    const pressure = (load / 1000) * 0.8 + (rpm / 10000) * 5 + noise;
-    const temp = 40 + (rpm / 500) * 2 + (load / 8000) + noise;
-    const vib = (rpm / 3000) * 10 + noise;
+    const maxPressure = 0.5 + (15 * normLoad) + (5 * normRPM); 
+    const minFilmThickness = Math.max(5, (this.NOMINAL_CLEARANCE * 1000) * (1 - (0.9 * normLoad)));
+    const temperature = 25 + (80 * normRPM) + (30 * normLoad);
+    const vibrationAmp = (10 * normRPM) + (Math.random() * 2);
 
-    // 生成假装是 3D 场的数据 (72个点)
-    const field = new Array(72).fill(0).map((_, i) => {
-      // 在底部(约36-40索引处)压力最大
-      const dist = Math.abs(i - 36);
-      return dist < 10 ? pressure * (1 - dist/10) : 0;
-    });
+    const pressureArray: number[] = [];
+    const thicknessArray: number[] = [];
+    const temperatureArray: number[] = [];
 
-    return {
+    const eccentricity = Math.min(0.95, Math.max(0.1, 0.2 + 0.8 * normLoad - 0.3 * normRPM));
+    const attitudeAngle = 3.0 + normRPM * 0.5;
+    const pressurePhase = Math.PI + (normRPM * 0.5);
+
+    for (let i = 0; i < this.FIELD_RESOLUTION; i++) {
+      const theta = (i / this.FIELD_RESOLUTION) * Math.PI * 2;
+      
+      // 压力场
+      let pVal = Math.sin(theta + pressurePhase);
+      pVal = Math.max(0, pVal);
+      pressureArray.push(pVal * maxPressure);
+
+      // 厚度场
+      const hVal = this.NOMINAL_CLEARANCE * (1 + eccentricity * Math.cos(theta - attitudeAngle));
+      thicknessArray.push(hVal * 1000); 
+
+      // 温度场
+      const tempFactor = 0.5 * (1 - Math.cos(theta - 2)); 
+      const tVal = 40 + tempFactor * (temperature - 40);
+      temperatureArray.push(tVal);
+    }
+
+    const telemetryData: BearingTelemetry = {
       timestamp: Date.now(),
-      scalars: {
-        maxPressure: parseFloat(Math.max(0, pressure).toFixed(2)),
-        minFilmThickness: parseFloat((100 - load/600).toFixed(2)),
-        temperature: parseFloat(temp.toFixed(1)),
-        vibrationAmp: parseFloat(Math.abs(vib).toFixed(2)),
+      scalars: { 
+        rpm,   // ✅ 现在 types.ts 里有这个字段了，不会报错
+        load,  // ✅ 同上
+        temperature, 
+        vibrationAmp, 
+        maxPressure, 
+        minFilmThickness 
       },
       fieldData: {
-        pressureDistribution: field
+        pressureDistribution: pressureArray,
+        thicknessDistribution: thicknessArray,
+        temperatureDistribution: temperatureArray
       }
     };
-  }
 
-  private broadcast(data: BearingTelemetry) {
-    this.subscribers.forEach(cb => cb(data));
+    this.subscribers.forEach(cb => cb(telemetryData));
   }
 }
 
-// 导出单例
 export const mockService = new MockDataService();
