@@ -15,6 +15,7 @@ export const DebugPanel: React.FC<Props> = ({ onViewModeChange }) => {
   const [data, setData] = useState<BearingTelemetry | null>(null);
   const [rpm, setRpm] = useState(3000);
   const [load, setLoad] = useState(10000);
+  const [loadDirection, setLoadDirection] = useState(0);
   const [activeMode, setActiveMode] = useState<ViewMode>('pressure');
 
   useEffect(() => {
@@ -36,6 +37,12 @@ export const DebugPanel: React.FC<Props> = ({ onViewModeChange }) => {
     const val = Number(e.target.value);
     setLoad(val);
     mockService.updateParams({ load: val });
+  };
+
+  const handleDirectionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = Number(e.target.value);
+    setLoadDirection(val);
+    mockService.updateParams({ loadDirection: val });
   };
 
   // 切换模式处理
@@ -84,6 +91,20 @@ export const DebugPanel: React.FC<Props> = ({ onViewModeChange }) => {
             <span>载荷 (N)</span> <span style={{ color: '#ffafbd' }}>{load}</span>
           </label>
           <input type="range" min="0" max="50000" step="500" value={load} onChange={handleLoadChange} style={{ width: '100%' }} />
+        </div>
+        <div>
+          <label style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', marginBottom: '4px' }}>
+            <span>载荷方向 (Deg)</span> <span style={{ color: '#ffd700' }}>{loadDirection}°</span>
+          </label>
+          <input 
+            type="range" 
+            min="0" 
+            max="360" 
+            step="1" 
+            value={loadDirection} 
+            onChange={handleDirectionChange} 
+            style={{ width: '100%' }} 
+          />
         </div>
       </div>
 

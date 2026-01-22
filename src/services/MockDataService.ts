@@ -4,6 +4,7 @@ import type { BearingTelemetry } from './types'; // ✅ 必须使用 type 导入
 interface SimulationParams {
   rpm: number;
   load: number;
+  loadDirection: number;
 }
 
 class MockDataService {
@@ -12,7 +13,8 @@ class MockDataService {
   
   private params: SimulationParams = {
     rpm: 0,
-    load: 0
+    load: 0,
+    loadDirection: 0
   };
 
   private readonly FIELD_RESOLUTION = 360; 
@@ -46,9 +48,10 @@ class MockDataService {
   }
 
   private update() {
-    const { rpm, load } = this.params;
+    const { rpm, load, loadDirection } = this.params;
     const normRPM = rpm / 10000;
     const normLoad = load / 50000;
+    const loadRad = (loadDirection * Math.PI) / 180;
 
     const maxPressure = 0.5 + (15 * normLoad) + (5 * normRPM); 
     const minFilmThickness = Math.max(5, (this.NOMINAL_CLEARANCE * 1000) * (1 - (0.9 * normLoad)));
@@ -60,8 +63,12 @@ class MockDataService {
     const temperatureArray: number[] = [];
 
     const eccentricity = Math.min(0.95, Math.max(0.1, 0.2 + 0.8 * normLoad - 0.3 * normRPM));
-    const attitudeAngle = 3.0 + normRPM * 0.5;
-    const pressurePhase = Math.PI + (normRPM * 0.5);
+    // attitudeAngle 决定了最小膜厚的位置
+    const attitudeAngle = 3.0 + normRPM * 0.5 + loadRad; 
+    // pressurePhase 决定了最大压力的位置
+    const pressurePhase = Math.PI + (normRPM * 0.5) + loadRad; 
+    // 温度场通常稍微滞后于压力场，但也随载荷旋转
+    const tempPhase = 2.0 + loadRad;
 
     for (let i = 0; i < this.FIELD_RESOLUTION; i++) {
       const theta = (i / this.FIELD_RESOLUTION) * Math.PI * 2;
@@ -86,6 +93,7 @@ class MockDataService {
       scalars: { 
         rpm,   // ✅ 现在 types.ts 里有这个字段了，不会报错
         load,  // ✅ 同上
+        loadDirection,
         temperature, 
         vibrationAmp, 
         maxPressure, 
