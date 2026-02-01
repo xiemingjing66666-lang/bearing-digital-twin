@@ -1,28 +1,34 @@
 // src/App.tsx
-import React, { useState, useRef } from 'react';
-import { DebugPanel } from './components/DebugPanel';
-import type { ViewMode } from './components/DebugPanel'; // ✅ 修复：导入类型
+import React, { useState, useRef, useEffect } from 'react';
 import { BearingScene } from './scenes/BearingScene';
-import { SettingsPanel } from './components/SettingsPanel';
-import type { AppConfig, StationPart } from './components/SettingsPanel'; // ✅ 修复：导入类型
+import { SettingsPanel, type AppConfig, type StationPart, type ViewMode } from './components/SettingsPanel';
+import { mockService } from './services/MockDataService';
 
-// 工具函数：Blob 转 Base64
+// 引入新组件
+import { TopBar } from './components/dashboard/TopBar';
+import { LeftPanel } from './components/dashboard/LeftPanel';
+import { RightPanel } from './components/dashboard/RightPanel';
+import { BottomPanel } from './components/dashboard/BottomPanel';
+
+// ... (工具函数保持不变: blobToBase64, base64ToBlob) ...
+
 const blobToBase64 = (blob: Blob): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-};
-
-// 工具函数：Base64 转 Blob
-const base64ToBlob = async (base64: string): Promise<Blob> => {
-  const res = await fetch(base64);
-  return await res.blob();
-};
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+  
+  // 工具函数：Base64 转 Blob
+  const base64ToBlob = async (base64: string): Promise<Blob> => {
+    const res = await fetch(base64);
+    return await res.blob();
+  };
 
 function App() {
+  // ... (Config 保持不变) ...
   const INITIAL_CONFIG: AppConfig = {
     station: [],
     bearing: { 
@@ -42,6 +48,13 @@ function App() {
   const [viewMode, setViewMode] = useState<ViewMode>('pressure');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // 全局启动服务
+  useEffect(() => {
+    mockService.start();
+    return () => mockService.stop();
+  }, []);
+
+  // ... (handleNew, handleSave, handleOpenClick, handleFileChange, handleDeleteStationPart, handleFileUpload 保持不变) ...
   const handleNew = () => { if (window.confirm('确定要新建项目吗？')) window.location.reload(); };
 
   const handleSave = async () => {
@@ -104,7 +117,6 @@ function App() {
     if (window.confirm('确认删除?')) setConfig(p => ({...p, station: p.station.filter(x=>x.id!==id)}));
   };
 
-  // ✅ 修复：明确参数类型，解决 any 报错
   const handleFileUpload = (part: 'station' | 'bearing' | 'shaft', file: File) => {
     const url = URL.createObjectURL(file);
     if (part === 'station') {
@@ -119,7 +131,6 @@ function App() {
         }]
       }));
     } else {
-      // ✅ 修复：使用类型断言，确保 p[key] 被视为对象
       const key = part as 'bearing' | 'shaft';
       setConfig(p => ({
         ...p,
@@ -128,37 +139,52 @@ function App() {
     }
   };
 
+
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: '#000' }}>
+    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#000', overflow: 'hidden' }}>
       <input type="file" ref={fileInputRef} style={{ display: 'none' }} accept=".json" onChange={handleFileChange} />
       
-      <div style={{ position: 'absolute', inset: 0, zIndex: 1 }}>
-        <BearingScene config={config} viewMode={viewMode} />
-      </div>
+      {/* 1. 顶部 Header */}
+      <TopBar onOpenSettings={() => setIsSettingsOpen(true)} />
 
-      <div style={{ position: 'absolute', inset: 0, zIndex: 2, pointerEvents: 'none' }}>
-        <div style={{ pointerEvents: 'auto' }}>
-          <DebugPanel onViewModeChange={setViewMode} />
-        </div>
+      {/* 2. 主体区域 (Flex Row) */}
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         
-        {!isSettingsOpen && (
-          <button 
-            onClick={() => setIsSettingsOpen(true)}
-            style={{ position: 'absolute', top: 20, right: 20, pointerEvents: 'auto', padding: '10px 20px', background: '#4facfe', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', boxShadow: '0 4px 10px rgba(0,0,0,0.3)' }}
-          >
-            ⚙️ 设置 / 文件
-          </button>
-        )}
+        {/* 左侧控制栏 */}
+        <LeftPanel viewMode={viewMode} onViewModeChange={setViewMode} />
 
-        <div style={{ pointerEvents: 'auto' }}>
-          <SettingsPanel 
-            isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
-            config={config} onConfigChange={setConfig} onFileUpload={handleFileUpload}
-            onDeleteStationPart={handleDeleteStationPart}
-            onNew={handleNew} onSave={handleSave} onOpen={handleOpenClick}
-          />
+        {/* 中央显示区 (Flex Column: 3D + Bottom) */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', position: 'relative' }}>
+          
+          {/* 3D 场景层 */}
+          <div style={{ flex: 1, position: 'relative' }}>
+             {/* 注意：Canvas 默认会填满父容器。
+                我们在这里放置 BearingScene，它内部是绝对定位还是响应式 Canvas 取决于实现。
+                通常 R3F Canvas 设为 width: 100%, height: 100% 即可。
+                这里为了保险，我们在 BearingScene 外面套一个 div 确保尺寸。
+             */}
+             <div style={{ width: '100%', height: '100%' }}>
+                <BearingScene config={config} viewMode={viewMode} />
+             </div>
+          </div>
+
+          {/* 底部趋势栏 */}
+          <BottomPanel />
         </div>
+
+        {/* 右侧指标栏 */}
+        <RightPanel />
+
       </div>
+
+      {/* 悬浮/抽屉式设置面板 (不占据布局空间) */}
+      <SettingsPanel 
+        isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)}
+        config={config} onConfigChange={setConfig} onFileUpload={handleFileUpload}
+        onDeleteStationPart={handleDeleteStationPart}
+        onNew={handleNew} onSave={handleSave} onOpen={handleOpenClick}
+        viewMode={viewMode} onViewModeChange={setViewMode}
+      />
     </div>
   );
 }
