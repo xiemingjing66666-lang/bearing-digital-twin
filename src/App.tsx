@@ -10,7 +10,6 @@ import { LeftPanel } from './components/dashboard/LeftPanel';
 import { RightPanel } from './components/dashboard/RightPanel';
 import { BottomPanel } from './components/dashboard/BottomPanel';
 
-// ... (工具函数保持不变: blobToBase64, base64ToBlob) ...
 
 const blobToBase64 = (blob: Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -28,7 +27,6 @@ const blobToBase64 = (blob: Blob): Promise<string> => {
   };
 
 function App() {
-  // ... (Config 保持不变) ...
   const INITIAL_CONFIG: AppConfig = {
     station: [],
     bearing: { 
@@ -54,7 +52,6 @@ function App() {
     return () => mockService.stop();
   }, []);
 
-  // ... (handleNew, handleSave, handleOpenClick, handleFileChange, handleDeleteStationPart, handleFileUpload 保持不变) ...
   const handleNew = () => { if (window.confirm('确定要新建项目吗？')) window.location.reload(); };
 
   const handleSave = async () => {
