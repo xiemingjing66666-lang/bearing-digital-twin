@@ -1,13 +1,9 @@
-// src/services/types.ts
-
-export interface BearingTelemetry {
+﻿export interface BearingTelemetry {
   timestamp: number;
   scalars: {
-    // ✅ 新增：必须显式声明 rpm 和 load，否则 MockDataService 会报错
     rpm: number;
     load: number;
-    loadDirection: number;  // ✅ 新增：载荷方向 (角度 0-360)
-    
+    loadDirection: number;
     temperature: number;
     vibrationAmp: number;
     maxPressure: number;
@@ -15,8 +11,30 @@ export interface BearingTelemetry {
   };
   fieldData: {
     pressureDistribution: number[];
-    // ✅ 新增：物理场数组
     thicknessDistribution: number[];
     temperatureDistribution: number[];
   };
+}
+
+export type AlertMetric = 'maxPressure' | 'temperature' | 'minFilmThickness';
+
+export type AlertLevel = 'warning' | 'critical';
+
+export interface AlertEvent {
+  id: string;
+  metric: AlertMetric;
+  level: AlertLevel;
+  message: string;
+  value: number;
+  threshold: number;
+  triggeredAt: number;
+  recoveredAt?: number;
+  active: boolean;
+}
+
+export interface TrendPoint {
+  timestamp: number;
+  maxPressure: number;
+  minFilmThickness: number;
+  temperature: number;
 }

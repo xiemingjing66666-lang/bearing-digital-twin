@@ -1,39 +1,57 @@
-// src/services/MockDataService.ts
-import type { BearingTelemetry } from './types'; // ✅ 必须使用 type 导入
+﻿import type { SimulationParams, TelemetryProvider } from './telemetryContract';
+import type { BearingTelemetry } from './types';
 
-interface SimulationParams {
-  rpm: number;
-  load: number;
-  loadDirection: number;
-}
-
-class MockDataService {
+export class MockDataService implements TelemetryProvider {
   private timer: number | null = null;
+
   private subscribers: ((data: BearingTelemetry) => void)[] = [];
-  
+
   private params: SimulationParams = {
-    rpm: 0,
-    load: 0,
-    loadDirection: 0
+    rpm: 3000,
+    load: 10000,
+    loadDirection: 0,
   };
 
-  private readonly FIELD_RESOLUTION = 360; 
-  private readonly NOMINAL_CLEARANCE = 0.05; 
+  private readonly fieldResolution = 360;
+
+  private readonly nominalClearance = 0.05;
+
+  private readonly scalarJitter = {
+    pressure: 0.03,
+    thickness: 0.02,
+    temperature: 0.015,
+  };
+
+  private readonly fieldJitter = {
+    pressure: 0.01,
+    thickness: 0.008,
+    temperature: 0.006,
+  };
+
+  private readonly smoothAlpha = 0.2;
+
+  private smoothedScalars = {
+    maxPressure: 0,
+    minFilmThickness: 0,
+    temperature: 0,
+  };
 
   public start() {
     if (this.timer) return;
+
     const loop = () => {
       this.update();
       this.timer = requestAnimationFrame(loop);
     };
+
     this.timer = requestAnimationFrame(loop);
   }
 
   public stop() {
-    if (this.timer) {
-      cancelAnimationFrame(this.timer);
-      this.timer = null;
-    }
+    if (!this.timer) return;
+
+    cancelAnimationFrame(this.timer);
+    this.timer = null;
   }
 
   public updateParams(newParams: Partial<SimulationParams>) {
@@ -43,8 +61,21 @@ class MockDataService {
   public subscribe(callback: (data: BearingTelemetry) => void) {
     this.subscribers.push(callback);
     return () => {
-      this.subscribers = this.subscribers.filter(cb => cb !== callback);
+      this.subscribers = this.subscribers.filter((cb) => cb !== callback);
     };
+  }
+
+  private withJitter(base: number, ratio: number) {
+    return base + base * ratio * (2 * Math.random() - 1);
+  }
+
+  private smooth(prev: number, next: number) {
+    if (prev === 0) return next;
+    return prev + this.smoothAlpha * (next - prev);
+  }
+
+  private clamp(value: number, min: number, max: number) {
+    return Math.min(max, Math.max(min, value));
   }
 
   private update() {
@@ -53,60 +84,71 @@ class MockDataService {
     const normLoad = load / 50000;
     const loadRad = (loadDirection * Math.PI) / 180;
 
-    const maxPressure = 0.5 + (15 * normLoad) + (5 * normRPM); 
-    const minFilmThickness = Math.max(5, (this.NOMINAL_CLEARANCE * 1000) * (1 - (0.9 * normLoad)));
-    const temperature = 25 + (80 * normRPM) + (30 * normLoad);
-    const vibrationAmp = (10 * normRPM) + (Math.random() * 2);
+    const baseMaxPressure = 0.5 + 15 * normLoad + 5 * normRPM;
+    const baseMinFilmThickness = Math.max(5, this.nominalClearance * 1000 * (1 - 0.9 * normLoad));
+    const baseTemperature = 25 + 80 * normRPM + 30 * normLoad;
+
+    const jitteredPressure = this.withJitter(baseMaxPressure, this.scalarJitter.pressure);
+    const jitteredThickness = this.withJitter(baseMinFilmThickness, this.scalarJitter.thickness);
+    const jitteredTemperature = this.withJitter(baseTemperature, this.scalarJitter.temperature);
+
+    const maxPressure = this.clamp(this.smooth(this.smoothedScalars.maxPressure, jitteredPressure), 0, 100);
+    const minFilmThickness = this.clamp(this.smooth(this.smoothedScalars.minFilmThickness, jitteredThickness), 3, 200);
+    const temperature = this.clamp(this.smooth(this.smoothedScalars.temperature, jitteredTemperature), 20, 160);
+
+    this.smoothedScalars = {
+      maxPressure,
+      minFilmThickness,
+      temperature,
+    };
+
+    const vibrationAmp = 10 * normRPM + Math.random() * 2;
 
     const pressureArray: number[] = [];
     const thicknessArray: number[] = [];
     const temperatureArray: number[] = [];
 
     const eccentricity = Math.min(0.95, Math.max(0.1, 0.2 + 0.8 * normLoad - 0.3 * normRPM));
-    // attitudeAngle 决定了最小膜厚的位置
-    const attitudeAngle = 3.0 + normRPM * 0.5 + loadRad; 
-    // pressurePhase 决定了最大压力的位置
-    const pressurePhase = Math.PI + (normRPM * 0.5) + loadRad; 
-    // 温度场通常稍微滞后于压力场，但也随载荷旋转
-    const tempPhase = 2.0 + loadRad;
+    const attitudeAngle = 3.0 + normRPM * 0.5 + loadRad;
+    const pressurePhase = Math.PI + normRPM * 0.5 + loadRad;
 
-    for (let i = 0; i < this.FIELD_RESOLUTION; i++) {
-      const theta = (i / this.FIELD_RESOLUTION) * Math.PI * 2;
-      
-      // 压力场
-      let pVal = Math.sin(theta + pressurePhase);
-      pVal = Math.max(0, pVal);
-      pressureArray.push(pVal * maxPressure);
+    for (let i = 0; i < this.fieldResolution; i += 1) {
+      const theta = (i / this.fieldResolution) * Math.PI * 2;
 
-      // 厚度场
-      const hVal = this.NOMINAL_CLEARANCE * (1 + eccentricity * Math.cos(theta - attitudeAngle));
-      thicknessArray.push(hVal * 1000); 
+      let pressure = Math.sin(theta + pressurePhase);
+      pressure = Math.max(0, pressure);
+      const pressureWithJitter = this.withJitter(pressure * maxPressure, this.fieldJitter.pressure);
+      pressureArray.push(this.clamp(pressureWithJitter, 0, 100));
 
-      // 温度场
-      const tempFactor = 0.5 * (1 - Math.cos(theta - 2)); 
-      const tVal = 40 + tempFactor * (temperature - 40);
-      temperatureArray.push(tVal);
+      const thickness = this.nominalClearance * (1 + eccentricity * Math.cos(theta - attitudeAngle));
+      const thicknessWithJitter = this.withJitter(thickness * 1000, this.fieldJitter.thickness);
+      thicknessArray.push(this.clamp(thicknessWithJitter, 3, 200));
+
+      const tempFactor = 0.5 * (1 - Math.cos(theta - 2));
+      const tempValue = 40 + tempFactor * (temperature - 40);
+      const tempWithJitter = this.withJitter(tempValue, this.fieldJitter.temperature);
+      temperatureArray.push(this.clamp(tempWithJitter, 20, 160));
     }
 
     const telemetryData: BearingTelemetry = {
       timestamp: Date.now(),
-      scalars: { 
-        rpm,   // ✅ 现在 types.ts 里有这个字段了，不会报错
-        load,  // ✅ 同上
+      scalars: {
+        rpm,
+        load,
         loadDirection,
-        temperature, 
-        vibrationAmp, 
-        maxPressure, 
-        minFilmThickness 
+        temperature,
+        vibrationAmp,
+        maxPressure,
+        minFilmThickness,
       },
       fieldData: {
         pressureDistribution: pressureArray,
         thicknessDistribution: thicknessArray,
-        temperatureDistribution: temperatureArray
-      }
+        temperatureDistribution: temperatureArray,
+      },
     };
 
-    this.subscribers.forEach(cb => cb(telemetryData));
+    this.subscribers.forEach((cb) => cb(telemetryData));
   }
 }
 

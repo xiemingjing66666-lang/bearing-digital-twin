@@ -1,0 +1,49 @@
+﻿:root {
+  --bg-0: #050b14;
+  --bg-1: #0b1424;
+  --bg-2: #111f33;
+  --panel: rgba(9, 23, 43, 0.78);
+  --panel-strong: #0f223f;
+  --border: #1b375f;
+  --text-primary: #eaf3ff;
+  --text-muted: #8ea6c7;
+  --accent: #39b9ff;
+  --accent-soft: rgba(57, 185, 255, 0.15);
+  --success: #1fdb90;
+  --warning: #ffb648;
+  --danger: #ff5468;
+  --radius: 10px;
+  --font-ui: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-number: 'Consolas', 'Roboto Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--text-primary);
+  background:
+    radial-gradient(circle at 10% 10%, rgba(29, 141, 224, 0.2), transparent 40%),
+    radial-gradient(circle at 80% 90%, rgba(42, 111, 223, 0.15), transparent 35%),
+    linear-gradient(130deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2));
+}
+
+button,
+input,
+select {
+  font-family: inherit;
+}
+
+.mono {
+  font-family: var(--font-number);
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(8px);
+}
